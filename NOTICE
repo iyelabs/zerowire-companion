@@ -1,0 +1,28 @@
+ZeroWire Companion is an independent, unofficial project maintained by IyeLabs.
+It is not affiliated with, endorsed by, or supported by Cloudflare, Inc.
+
+Original project code is MIT. Upstream Zero Wire briefings, assessment prompts,
+trademarks, CISA data, FIRST data and other source materials retain their own
+terms. Returned data is normalized, extracted and sometimes truncated; follow
+canonical source links for the original. See docs/sources-and-rights.md for
+attribution, the maintainer's source-usage acceptance and official policy scope.
+
+Cloudflare Radar publishes its API/direct-download data licensing policy at
+https://radar.cloudflare.com/about (CC BY-NC 4.0:
+https://creativecommons.org/licenses/by-nc/4.0/). Whether that scope covers Zero
+Wire RSS briefing text is not independently confirmed. Cloudflare remains the
+source publisher; canonical briefing titles and URLs identify each source.
+Normalization, extraction and truncation are modifications by this project.
+
+Dependencies retain their respective licenses. See package-lock.json.
+
+Selected GitHub Advisory Database records are attributed to their original
+advisory URLs and are available under CC BY 4.0:
+https://github.com/github/advisory-database
+https://creativecommons.org/licenses/by/4.0/
+
+Selected OSV records retain their source links. RustSec describes its own
+advisories as public domain, with GitHub-imported records under CC BY 4.0:
+https://github.com/RustSec/advisory-db
+Native CVE-derived data: © The MITRE Corporation; CVE Program Terms of Use:
+https://www.cve.org/Legal/TermsOfUse

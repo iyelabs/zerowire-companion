@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1200" viewBox="0 0 1500 1200" role="img"><title>ZeroWire Companion investigation workflow</title><desc>GitHub discovery, MCP connection, stored evidence and user verification. Background ingestion independently prepares D1 intelligence; queries never fetch sources.</desc><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#8498b2"/></marker></defs><rect width="1500" height="1200" rx="22" fill="#0b1422"/><g font-family="Arial, Helvetica, sans-serif">
+<text x="55" y="65" font-size="18" fill="#5cddc3" font-weight="700">ZEROWIRE COMPANION / IYELABS</text>
+<text x="55" y="120" font-size="43" fill="#f3f7fc" font-weight="700">From a question to evidence</text>
+<text x="55" y="155" font-size="21" fill="#a6b7cb" font-weight="400">Intelligence is prepared before the user asks</text>
+<rect x="55" y="210" width="430" height="125" rx="16" fill="#172438" stroke="#33445b" stroke-width="2"/>
+<text x="79" y="245" font-size="17" fill="#5cddc3" font-weight="700">01</text>
+<text x="79" y="280" font-size="27" fill="#fff" font-weight="700">Discover</text>
+<text x="79" y="312" font-size="19" fill="#b6c8db" font-weight="400">GitHub Repository</text>
+<path d="M490 273 L518 273" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<rect x="525" y="210" width="430" height="125" rx="16" fill="#172438" stroke="#33445b" stroke-width="2"/>
+<text x="549" y="245" font-size="17" fill="#5cddc3" font-weight="700">02</text>
+<text x="549" y="280" font-size="27" fill="#fff" font-weight="700">Connect</text>
+<text x="549" y="312" font-size="19" fill="#b6c8db" font-weight="400">Add the hosted MCP endpoint</text>
+<path d="M960 273 L988 273" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<rect x="995" y="210" width="430" height="125" rx="16" fill="#172438" stroke="#33445b" stroke-width="2"/>
+<text x="1019" y="245" font-size="17" fill="#5cddc3" font-weight="700">03</text>
+<text x="1019" y="280" font-size="27" fill="#fff" font-weight="700">Ask</text>
+<text x="1019" y="312" font-size="19" fill="#b6c8db" font-weight="400">Technology, CVE or briefing</text>
+<path d="M1210 341 L1210 378" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<rect x="55" y="390" width="1390" height="120" rx="16" fill="#172340" stroke="#456fd3" stroke-width="2"/>
+<text x="80" y="429" font-size="20" fill="#9db8ff" font-weight="700">PUBLIC READ PATH · SAME WORKER</text>
+<text x="80" y="467" font-size="27" fill="#fff" font-weight="700">Query existing D1 intelligence</text>
+<text x="80" y="495" font-size="19" fill="#c6d3ed" font-weight="400">No upstream fetch, synchronization or intelligence writes</text>
+<path d="M410 516 L410 555" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path d="M1080 516 L1080 555" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<rect x="55" y="570" width="680" height="125" rx="16" fill="#172438" stroke="#33445b" stroke-width="2"/>
+<text x="79" y="610" font-size="28" fill="#fff" font-weight="700">Investigation pack</text>
+<text x="79" y="648" font-size="21" fill="#b6c8db" font-weight="400">Facts · KEV / EPSS · package evidence</text>
+<text x="79" y="677" font-size="20" fill="#b6c8db" font-weight="400">Guidance, sources and optional source prompt</text>
+<rect x="765" y="570" width="680" height="125" rx="16" fill="#172438" stroke="#33445b" stroke-width="2"/>
+<text x="789" y="610" font-size="28" fill="#fff" font-weight="700">Intelligence digest</text>
+<text x="789" y="648" font-size="21" fill="#b6c8db" font-weight="400">Source-dated additions · observed changes</text>
+<text x="789" y="677" font-size="20" fill="#b6c8db" font-weight="400">Freshness, coverage and explicit unknowns</text>
+<path d="M410 701 L410 737" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path d="M1080 701 L1080 737" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<rect x="55" y="750" width="1390" height="110" rx="16" fill="#172438" stroke="#33445b" stroke-width="2"/>
+<text x="80" y="790" font-size="20" fill="#5cddc3" font-weight="700">YOUR ASSESSMENT</text>
+<text x="80" y="830" font-size="26" fill="#fff" font-weight="700">Verify installed versions, exposure, fixes and controls in your own environment</text>
+<rect x="55" y="930" width="1390" height="220" rx="16" fill="#102b2e" stroke="#248b7e" stroke-width="2"/>
+<text x="80" y="970" font-size="20" fill="#70e1cb" font-weight="700">BACKGROUND · SCHEDULED INGESTION</text>
+<rect x="80" y="990" width="590" height="60" rx="16" fill="#123337" stroke="#248b7e" stroke-width="2"/>
+<text x="100" y="1028" font-size="22" fill="#fff" font-weight="700">First successful import → establish baseline</text>
+<rect x="80" y="1070" width="590" height="60" rx="16" fill="#123337" stroke="#248b7e" stroke-width="2"/>
+<text x="100" y="1108" font-size="22" fill="#fff" font-weight="700">Later imports → detect observed changes</text>
+<rect x="930" y="1008" width="450" height="105" rx="16" fill="#123337" stroke="#248b7e" stroke-width="2"/>
+<text x="955" y="1047" font-size="25" fill="#fff" font-weight="700">Persistent D1</text>
+<text x="955" y="1083" font-size="21" fill="#b6c8db" font-weight="400">Prepared evidence and provenance</text>
+<path d="M676 1020 L800 1020 L800 1060 L917 1060" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path d="M676 1100 L800 1100 L800 1060 L917 1060" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path d="M1386 1060 L1472 1060 L1472 450 L1452 450" stroke="#8498b2" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<text x="55" y="1180" font-size="18" fill="#a9bdd2" font-weight="400">A technology match is relevance. Missing evidence remains unknown. Retrieval never authorizes execution.</text>
+</g></svg>

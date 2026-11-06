@@ -1,0 +1,18 @@
+name: Feature request
+description: Propose a focused improvement to vulnerability investigation
+title: "feature: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What investigation problem should this solve?
+      description: Use public or synthetic examples. Do not include credentials or private inventories.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected outcome
+      description: Describe useful behavior, evidence requirements and existing alternatives.
+    validations:
+      required: true

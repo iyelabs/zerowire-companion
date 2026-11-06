@@ -1,0 +1,19 @@
+name: ZeroWire intelligence review
+on:
+  workflow_dispatch:
+  # Optional: uncomment to review daily at 09:00 UTC.
+  # schedule:
+  #   - cron: '0 9 * * *'
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Summarize observed events
+        env:
+          # Both filters are optional. A tag is source relevance, not exposure.
+          ZEROWIRE_CVE: ''
+          ZEROWIRE_TAG: ''
+        run: python3 examples/github-actions/zerowire-summary.py

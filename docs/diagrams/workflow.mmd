@@ -1,0 +1,16 @@
+%% Editable logical source for workflow.svg; SVG uses a custom layout.
+flowchart TB
+  DISCOVER["Discover: GitHub Repository"] --> CONNECT["Connect the MCP endpoint"] --> ASK["Ask about a technology, CVE or security question"]
+  ASK --> READ["Public read path: query stored intelligence<br/>No query-triggered upstream fetch"]
+  READ --> PACK["Investigation pack: facts, context, sources<br/>Optional publisher assessment prompt"]
+  READ --> DIGEST["Intelligence digest: observed changes and freshness"]
+  PACK --> ASSESS["Your assessment: verify versions, exposure and fixes"]
+  DIGEST --> ASSESS
+  subgraph BACKGROUND["Background: scheduled ingestion"]
+    FIRST["First successful sync: establish baseline"]
+    LATER["Later syncs: record observed changes"]
+    STORE[("Persistent D1: prepared evidence and provenance")]
+    FIRST --> STORE
+    LATER --> STORE
+  end
+  STORE --> READ

@@ -1,0 +1,28 @@
+%% Editable logical source for architecture.svg; SVG uses a custom layout.
+flowchart TB
+  RSS["Cloudflare Zero Wire RSS"]
+  KEV["CISA KEV catalog"]
+  EPSS["FIRST EPSS"]
+  GHSA["GitHub Security Advisories"]
+  OSV["OSV.dev — selected records"]
+  subgraph WORKER["One Cloudflare Worker"]
+    subgraph INGEST["Scheduled path — Cron Trigger"]
+      FETCH["Fetch & validate<br/>Fixed source adapters and bounded refresh"]
+      NORMALIZE["Normalize & connect<br/>Canonical identities, aliases and semantic changes"]
+      ENRICH["Enrich & persist<br/>KEV, EPSS, package evidence, source dates"]
+      FETCH --> NORMALIZE --> ENRICH
+    end
+    PUBLIC["Public read path<br/>Read-only MCP + JSON/RSS feeds<br/>Bounded queries, rate limits<br/>No upstream fetch or intelligence write"]
+  end
+  D1[("Cloudflare D1 — persistent intelligence<br/>Briefings, history, signals, provenance")]
+  CLIENTS["MCP clients — Streamable HTTP"]
+  FEEDS["Feed readers and automations"]
+  RSS --> FETCH
+  KEV --> FETCH
+  EPSS --> FETCH
+  GHSA --> FETCH
+  OSV --> FETCH
+  ENRICH --> D1
+  D1 --> PUBLIC
+  PUBLIC --> CLIENTS
+  PUBLIC --> FEEDS

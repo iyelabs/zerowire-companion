@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/iyelabs/zerowire-companion/security/policy
+    about: Read the private reporting policy. Do not disclose sensitive details in an issue.
+  - name: Usage and source coverage
+    url: https://github.com/iyelabs/zerowire-companion/blob/main/docs/usage.md
+    about: Connection instructions, useful prompts, data dates and coverage boundaries.

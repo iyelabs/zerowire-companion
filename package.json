@@ -1,0 +1,40 @@
+{
+  "name": "@iyelabs/zerowire-companion",
+  "version": "0.1.0-rc.1",
+  "private": true,
+  "description": "An unofficial, GitHub-first Cloudflare Zero Wire companion maintained by IyeLabs.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.0 <25"
+  },
+  "scripts": {
+    "typecheck": "cf workers types && tsc --noEmit",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "test:runtime": "node --test test/runtime.integration.mjs",
+    "build": "cf build",
+    "dev": "cf dev",
+    "types": "cf workers types"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.11",
+    "@types/node": "^24.0.0",
+    "cf": "1.0.0-beta.27",
+    "miniflare": "5.20261101.0-beta",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "fast-xml-parser": "5.11.2",
+    "zod": "4.6.7"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iyelabs/zerowire-companion.git"
+  },
+  "homepage": "https://github.com/iyelabs/zerowire-companion#readme",
+  "bugs": {
+    "url": "https://github.com/iyelabs/zerowire-companion/issues"
+  }
+}
