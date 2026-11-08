@@ -121,3 +121,39 @@ test('eligible previously rate-limited GHSA CVE is retried before untouched back
  sql.prepare('INSERT INTO package_feed_state(singleton,baseline_at,last_attempt_at,last_success_at,last_error_code) VALUES(1,?,?,?,NULL)').run(at,'2026-11-05T00:20:00.000Z','2026-11-05T00:20:00.000Z');
  const seen=[];await refreshPackages(db,'owner','2026-11-05T00:30:00.000Z',async url=>{if(url.includes('cve_id=')){seen.push(new URL(url).searchParams.get('cve_id'));return []}if(url.includes('api.github.com'))return [];return osv});assert.deepEqual(seen,[old]);assert.equal(sql.prepare("SELECT last_error_code FROM package_source_state WHERE source='ghsa' AND cve_id=?").get(old).last_error_code,null);
 }finally{sql.close()}});
+
+test('expired suspended primary rate limit gets one bounded recovery probe and clears on success',async()=>{const {sql,db}=setup();try{
+ sql.prepare("INSERT INTO ghsa_retry_policy(singleton,failures,retry_not_before,suspended,reason,last_status,remaining,reset_at) VALUES(1,5,?,1,'primary_rate_limit',403,0,?)").run('2026-11-05T01:00:01.000Z','2026-11-05T01:00:00.000Z');
+ let calls=0;const okay=async url=>{if(url.includes('api.github.com'))calls++;return url.includes('api.github.com')?[]:osv};
+ await refreshPackages(db,'owner','2026-11-05T01:00:00.000Z',okay);assert.equal(calls,0);
+ await refreshPackages(db,'owner','2026-11-05T02:00:00.000Z',okay);assert.equal(calls,1);assert.equal(sql.prepare('SELECT * FROM ghsa_retry_policy').get(),undefined);
+}finally{sql.close()}});
+test('persistent primary limit uses daily cooldown, invalid reset remains suspended',async()=>{const {sql,db}=setup();try{
+ sql.prepare("INSERT INTO ghsa_retry_policy(singleton,failures,retry_not_before,suspended,reason,last_status,remaining,reset_at) VALUES(1,5,?,1,'primary_rate_limit',403,0,?)").run('2026-11-05T01:00:01.000Z','2026-11-05T01:00:00.000Z');
+ let calls=0;const fail=async url=>{if(url.includes('api.github.com')){calls++;throw new SourceHttpError(403,{reason:'primary_rate_limit',remaining:0,resetAt:'2026-11-05T03:00:00.000Z',retryAfterSeconds:null,invalidRetryAfter:false})}return osv};
+ await refreshPackages(db,'owner','2026-11-05T02:00:00.000Z',fail);assert.equal(calls,1);assert.equal(sql.prepare('SELECT retry_not_before FROM ghsa_retry_policy').get().retry_not_before,'2026-11-06T02:00:00.000Z');
+ await refreshPackages(db,'owner','2026-11-06T01:00:00.000Z',fail);assert.equal(calls,1);
+ sql.prepare("UPDATE ghsa_retry_policy SET reason='invalid_retry_after'").run();await refreshPackages(db,'owner','2026-11-07T01:00:00.000Z',fail);assert.equal(calls,1);
+}finally{sql.close()}});
+test('OSV errors preserve safe cause and cached data, and alias 404 is dated absence',async()=>{const {sql,db}=setup();try{
+ sql.prepare('INSERT INTO briefings VALUES(?,?,?,?)').run('b','https://example.test',at,at);sql.prepare('INSERT INTO briefing_cves VALUES(?,?)').run('b',cve);
+ sql.prepare('INSERT INTO osv_alias_queue(cve_id,advisory_id) VALUES(?,?)').run(cve,id);
+ await refreshPackages(db,'owner',at,async url=>{if(url.includes('api.github.com'))return [];if(url.endsWith(id))throw new SourceHttpError(404);throw new SourceHttpError(429)});
+ assert.equal(sql.prepare('SELECT last_error_code FROM osv_cve_state WHERE cve_id=?').get(cve).last_error_code,'source_http_429');
+ const alias=sql.prepare('SELECT last_error_code,last_success_at FROM osv_alias_queue WHERE advisory_id=?').get(id);assert.equal(alias.last_error_code,'record_not_found');assert.equal(alias.last_success_at,at);
+ let aliasCalls=0;await refreshPackages(db,'owner','2026-11-05T02:00:00.000Z',async url=>{if(url.endsWith(id))aliasCalls++;if(url.endsWith(cve))throw new SyntaxError('secret upstream content');return []});
+ assert.equal(aliasCalls,0);assert.equal(sql.prepare('SELECT last_error_code FROM osv_cve_state WHERE cve_id=?').get(cve).last_error_code,'source_invalid_json');
+}finally{sql.close()}});
+test('HTTP 200 OSV native record lacking affected is dated absence, not an outage',async()=>{const {sql,db}=setup();try{
+ sql.prepare('INSERT INTO briefings VALUES(?,?,?,?)').run('b','https://example.test',at,at);sql.prepare('INSERT INTO briefing_cves VALUES(?,?)').run('b',cve);
+ await refreshPackages(db,'owner',at,async url=>url.endsWith(cve)?{id:cve}:[]);
+ const state=sql.prepare('SELECT last_error_code,last_success_at FROM osv_cve_state WHERE cve_id=?').get(cve);assert.equal(state.last_error_code,'record_no_affected_data');assert.equal(state.last_success_at,at);
+ assert.equal(sql.prepare("SELECT count(*) n FROM package_advisories WHERE source='osv'").get().n,0);
+}finally{sql.close()}});
+test('missing OSV GHSA alias does not stall batch and remains a dated per-alias absence',async()=>{const {sql,db}=setup();try{
+ await refreshPackages(db,'owner',at,async url=>{if(url.includes('api.github.com'))return ghsa;throw new SourceHttpError(404)});
+ const state=sql.prepare("SELECT last_error_code,coverage_complete FROM package_source_state WHERE source='osv' AND cve_id=?").get(cve);
+ assert.equal(state.last_error_code,null);assert.equal(state.coverage_complete,1);
+ const alias=sql.prepare('SELECT last_error_code,last_success_at FROM osv_alias_queue WHERE cve_id=? AND advisory_id=?').get(cve,id);
+ assert.equal(alias.last_error_code,'record_not_found');assert.equal(alias.last_success_at,at);
+}finally{sql.close()}});

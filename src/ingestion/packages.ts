@@ -8,13 +8,31 @@ const PER_PAGE=10;
 const CACHE_HOURS=24;
 const RETRY_HOURS=1;
 const sourceError=(error:unknown)=>error instanceof SourceHttpError&&Number.isInteger(error.status)&&error.status>=400&&error.status<=599?`source_http_${error.status}`:'source_refresh_failed';
-type RetryPolicy={failures:number;retry_not_before:string|null;suspended:number;reason:string|null};
-async function retryPolicy(db:Db):Promise<RetryPolicy|null>{return db.prepare('SELECT failures,retry_not_before,suspended,reason FROM ghsa_retry_policy WHERE singleton=1').first<RetryPolicy>();}
-function blocked(policy:RetryPolicy|null,now:string):boolean{return !!policy&&(policy.suspended===1 || !!policy.retry_not_before&&Date.parse(policy.retry_not_before)>Date.parse(now));}
+type RetryPolicy={failures:number;retry_not_before:string|null;suspended:number;reason:string|null;reset_at:string|null};
+async function retryPolicy(db:Db):Promise<RetryPolicy|null>{return db.prepare('SELECT failures,retry_not_before,suspended,reason,reset_at FROM ghsa_retry_policy WHERE singleton=1').first<RetryPolicy>();}
+function blocked(policy:RetryPolicy|null,now:string):boolean{
+ if(!policy)return false;
+ const retry=policy.retry_not_before?Date.parse(policy.retry_not_before):NaN;
+ if(policy.suspended===1){
+  // Only a documented primary reset allows an automatic recovery probe.
+  const reset=policy.reset_at?Date.parse(policy.reset_at):NaN;
+  if(policy.reason!=='primary_rate_limit'||!Number.isFinite(reset)||!Number.isFinite(retry)||retry<=reset)return true;
+ }
+ return Number.isFinite(retry)&&retry>Date.parse(now);
+}
+function osvError(error:unknown):string{
+ if(error instanceof SourceHttpError)return sourceError(error);
+ if(error instanceof SyntaxError)return 'source_invalid_json';
+ if(error instanceof Error){
+  if(error.name==='TimeoutError'||error.name==='AbortError')return 'source_timeout';
+  if(['invalid_osv_advisory','invalid_osv_cve','invalid_rustsec_advisory','invalid_osv_withdrawal','osv_source_rights_unverified','source_empty_body','source_too_large'].includes(error.message))return error.message;
+ }
+ return 'source_refresh_failed';
+}
 async function recordGhsaFailure(db:Db,owner:string,now:string,error:unknown,statements:D1PreparedStatement[]):Promise<void>{
  if(!(error instanceof SourceHttpError)||![403,429].includes(error.status)){await fencedBatch(db,owner,statements);return;}
- const old=await retryPolicy(db),failures=(old?.failures??0)+1,meta=error.ghsa,reason=meta?.reason??'unknown';
- const base=Date.parse(now), delay=reason==='secondary_rate_limit'?Math.min(24,2**(failures-1))*3600000:reason==='primary_rate_limit'&&meta?.resetAt?60000:3600000;
+ const old=await retryPolicy(db),failures=(old?.failures??0)+1,meta=error.ghsa,reason=meta?.invalidRetryAfter?'invalid_retry_after':meta?.reason??'unknown';
+ const base=Date.parse(now), delay=failures>=5?86400000:reason==='secondary_rate_limit'?Math.min(24,2**(failures-1))*3600000:reason==='primary_rate_limit'&&meta?.resetAt?60000:3600000;
  const retry=Math.max(base+delay,meta?.resetAt?Date.parse(meta.resetAt)+1000:0,meta?.retryAfterSeconds!==null&&meta?.retryAfterSeconds!==undefined?base+meta.retryAfterSeconds*1000:0);
  const suspended=reason==='forbidden'||failures>=5||!!meta?.invalidRetryAfter||(meta?.remaining===0&&!meta.resetAt);
  statements.push(db.prepare('INSERT INTO ghsa_retry_policy(singleton,failures,retry_not_before,suspended,reason,last_status,remaining,reset_at,retry_after_seconds) VALUES(1,?,?,?,?,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET failures=excluded.failures,retry_not_before=excluded.retry_not_before,suspended=excluded.suspended,reason=excluded.reason,last_status=excluded.last_status,remaining=excluded.remaining,reset_at=excluded.reset_at,retry_after_seconds=excluded.retry_after_seconds').bind(failures,new Date(retry).toISOString(),suspended?1:0,reason,error.status,meta?.remaining??null,meta?.resetAt??null,meta?.retryAfterSeconds??null));
@@ -41,7 +59,7 @@ async function refreshGhsaDiscovery(db:Db,owner:string,now:string,read:Read):Pro
    statements.push(put(db,record,now));
   }
   statements.push(db.prepare("INSERT INTO package_feed_state(singleton,baseline_at,last_attempt_at,last_success_at,last_error_code) VALUES(1,?,?,?,NULL) ON CONFLICT(singleton) DO UPDATE SET baseline_at=COALESCE(package_feed_state.baseline_at,excluded.baseline_at),last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,last_error_code=NULL").bind(now,now,now));
-  await fencedBatch(db,owner,statements);
+  statements.push(clearGhsaFailures(db));await fencedBatch(db,owner,statements);
  } catch(error) {const code=sourceError(error);await recordGhsaFailure(db,owner,now,error,[db.prepare("INSERT INTO package_feed_state(singleton,last_attempt_at,last_error_code) VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_error_code=excluded.last_error_code").bind(now,code)]);}
 }
 /** Independent, bounded scheduled refresh. The public MCP path never calls it. */
@@ -75,6 +93,10 @@ export async function refreshPackages(db:Db,owner:string,now:string,read:Read):P
    const item=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw as Record<string,unknown>:{};
    if(item.id===native.cve_id&&typeof item.withdrawn==='string'&&Number.isFinite(Date.parse(item.withdrawn))){
     await fencedBatch(db,owner,[db.prepare("DELETE FROM package_advisories WHERE source='osv' AND advisory_id=? AND cve_id=?").bind(native.cve_id,native.cve_id),db.prepare("INSERT INTO osv_cve_state(cve_id,last_attempt_at,last_success_at,last_error_code) VALUES(?,?,?,'record_withdrawn') ON CONFLICT(cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,last_error_code=excluded.last_error_code").bind(native.cve_id,now,now)]);
+   }else if(item.id===native.cve_id && item.affected===undefined){
+    // OSV may return a valid identifier without package applicability data.
+    // Keep prior evidence; a current absence is neither an outage nor a fix.
+    await fencedBatch(db,owner,[db.prepare("INSERT INTO osv_cve_state(cve_id,last_attempt_at,last_success_at,last_error_code) VALUES(?,?,?,'record_no_affected_data') ON CONFLICT(cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,last_error_code=excluded.last_error_code").bind(native.cve_id,now,now)]);
    }else{
     const record=normalizeOsvCve(raw,native.cve_id);
     await fencedBatch(db,owner,[put(db,record,now),...(record.aliases??[]).filter(id=>id.length<=40&&(/^RUSTSEC-\d{4}-\d{4,}$/.test(id)||/^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/.test(id))).map(id=>db.prepare('INSERT INTO osv_alias_queue(cve_id,advisory_id) VALUES(?,?) ON CONFLICT(cve_id,advisory_id) DO NOTHING').bind(native.cve_id,id)),db.prepare('INSERT INTO osv_cve_state(cve_id,last_attempt_at,last_success_at,last_error_code) VALUES(?,?,?,NULL) ON CONFLICT(cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,last_error_code=NULL').bind(native.cve_id,now,now)]);
@@ -85,7 +107,7 @@ export async function refreshPackages(db:Db,owner:string,now:string,read:Read):P
     // outage or proof that other OSV records and aliases do not exist. Keep any
     // previously retrieved advisory with its original retrieval timestamp.
     await fencedBatch(db,owner,[db.prepare("INSERT INTO osv_cve_state(cve_id,last_attempt_at,last_success_at,last_error_code) VALUES(?,?,?,'record_not_found') ON CONFLICT(cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,last_error_code=excluded.last_error_code").bind(native.cve_id,now,now)]);
-   }else await fencedBatch(db,owner,[db.prepare("INSERT INTO osv_cve_state(cve_id,last_attempt_at,last_error_code) VALUES(?,?,'source_refresh_failed') ON CONFLICT(cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_error_code=excluded.last_error_code").bind(native.cve_id,now)]);
+   }else await fencedBatch(db,owner,[db.prepare("INSERT INTO osv_cve_state(cve_id,last_attempt_at,last_error_code) VALUES(?,?,?) ON CONFLICT(cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_error_code=excluded.last_error_code").bind(native.cve_id,now,osvError(error))]);
   }
  }
  // Backfill one native CVE already cached before alias discovery was enabled.
@@ -98,7 +120,7 @@ export async function refreshPackages(db:Db,owner:string,now:string,read:Read):P
   const raw=await read(`https://api.osv.dev/v1/vulns/${encodeURIComponent(alias.advisory_id)}`);
   const record=alias.advisory_id.startsWith('GHSA-')?normalizeOsv(raw,alias.cve_id,alias.advisory_id):normalizeOsvRustsec(raw,alias.cve_id,alias.advisory_id);
   await fencedBatch(db,owner,[put(db,record,now),db.prepare("UPDATE osv_alias_queue SET last_attempt_at=?,last_success_at=?,last_error_code=NULL WHERE cve_id=? AND advisory_id=?").bind(now,now,alias.cve_id,alias.advisory_id)]);
- }catch{await fencedBatch(db,owner,[db.prepare("UPDATE osv_alias_queue SET last_attempt_at=?,last_error_code='source_refresh_failed' WHERE cve_id=? AND advisory_id=?").bind(now,alias.cve_id,alias.advisory_id)]);}}
+ }catch(error){const missing=error instanceof SourceHttpError&&error.status===404;await fencedBatch(db,owner,[db.prepare("UPDATE osv_alias_queue SET last_attempt_at=?,last_success_at=CASE WHEN ?=1 THEN ? ELSE last_success_at END,last_error_code=? WHERE cve_id=? AND advisory_id=?").bind(now,missing?1:0,now,missing?'record_not_found':osvError(error),alias.cve_id,alias.advisory_id)]);}}
  // OSV runs even if GHSA is temporarily unavailable, using known cached aliases.
  const osvcandidate=await db.prepare(`SELECT a.cve_id,s.cursor FROM package_advisories a LEFT JOIN package_source_state s ON s.source='osv' AND s.cve_id=a.cve_id WHERE a.source='ghsa' AND (s.last_success_at IS NULL OR s.last_success_at<? OR s.coverage_complete=0) AND (s.last_attempt_at IS NULL OR s.last_attempt_at<?) GROUP BY a.cve_id ORDER BY COALESCE(s.last_attempt_at,''),a.cve_id LIMIT 1`).bind(stale,retry).first<{cve_id:string;cursor:string|null}>();
  if(!osvcandidate)return;
@@ -106,8 +128,9 @@ export async function refreshPackages(db:Db,owner:string,now:string,read:Read):P
  const ids=(await db.prepare("SELECT advisory_id FROM package_advisories WHERE source='ghsa' AND cve_id=? AND advisory_id>? ORDER BY advisory_id LIMIT 3").bind(cve,cursor).all<{advisory_id:string}>()).results;
  if(!ids.length){await fencedBatch(db,owner,[status(db,'osv',cve,now,true,null,true)]);return;}
  try{
-  const rows:PackageAdvisory[]=[];for(const {advisory_id:id} of ids)rows.push(normalizeOsv(await read(`https://api.osv.dev/v1/vulns/${encodeURIComponent(id)}`),cve,id));
+  const rows:PackageAdvisory[]=[],missing:string[]=[];
+  for(const {advisory_id:id} of ids){try{rows.push(normalizeOsv(await read(`https://api.osv.dev/v1/vulns/${encodeURIComponent(id)}`),cve,id));}catch(error){if(error instanceof SourceHttpError&&error.status===404)missing.push(id);else throw error;}}
   const last=ids.at(-1)!.advisory_id;const more=await db.prepare("SELECT advisory_id FROM package_advisories WHERE source='ghsa' AND cve_id=? AND advisory_id>? ORDER BY advisory_id LIMIT 1").bind(cve,last).first();
-  await fencedBatch(db,owner,[...rows.map(x=>put(db,x,now)),status(db,'osv',cve,now,true,more?last:null,!more)]);
- }catch{await fencedBatch(db,owner,[db.prepare("INSERT INTO package_source_state(source,cve_id,last_attempt_at,last_error_code,cursor) VALUES('osv',?,?,'source_refresh_failed',?) ON CONFLICT(source,cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_error_code=excluded.last_error_code").bind(cve,now,cursor)]);}
+  await fencedBatch(db,owner,[...rows.map(x=>put(db,x,now)),...missing.map(id=>db.prepare("INSERT INTO osv_alias_queue(cve_id,advisory_id,last_attempt_at,last_success_at,last_error_code) VALUES(?,?,?,?,'record_not_found') ON CONFLICT(cve_id,advisory_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,last_error_code=excluded.last_error_code").bind(cve,id,now,now)),status(db,'osv',cve,now,true,more?last:null,!more)]);
+ }catch(error){await fencedBatch(db,owner,[db.prepare("INSERT INTO package_source_state(source,cve_id,last_attempt_at,last_error_code,cursor) VALUES('osv',?,?,?,?) ON CONFLICT(source,cve_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_error_code=excluded.last_error_code").bind(cve,now,osvError(error),cursor)]);}
 }

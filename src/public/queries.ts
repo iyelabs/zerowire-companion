@@ -45,7 +45,7 @@ export function createQueries(db: WorkerEnv["DB"]) {
     return {items,next,scanned,scan_limit:scanLimit};
    });
   },
-  async packageFeedState() { return guarded(async()=>db.prepare("SELECT baseline_at,last_attempt_at,last_success_at,last_error_code FROM package_feed_state WHERE singleton=1").first()); },
+  async packageFeedState() { return guarded(async()=>db.prepare("SELECT f.baseline_at,f.last_attempt_at,f.last_success_at,f.last_error_code,p.suspended AS retry_suspended,p.reason AS retry_reason,p.retry_not_before FROM package_feed_state f LEFT JOIN ghsa_retry_policy p ON p.singleton=f.singleton WHERE f.singleton=1").first()); },
   async epssSeriesState() { return guarded(async()=>db.prepare("SELECT last_attempt_at,last_success_at,last_error_code FROM epss_series_progress WHERE singleton=1").first()); },
   async packageAdvisories(cve:string,limit:number) { return guarded(async () => (await db.prepare("SELECT source,advisory_id,cve_id,source_url,published_at,modified_at,retrieved_at,normalized_json FROM package_advisories WHERE cve_id=? ORDER BY source,advisory_id LIMIT ?").bind(cve,limit).all()).results); },
   async packageState(cve:string) { return guarded(async () => (await db.prepare("SELECT source,last_attempt_at,last_success_at,last_error_code,cursor,coverage_complete FROM package_source_state WHERE cve_id=? UNION ALL SELECT 'osv_native_cve',last_attempt_at,last_success_at,last_error_code,NULL,NULL FROM osv_cve_state WHERE cve_id=? UNION ALL SELECT 'osv_rustsec',last_attempt_at,last_success_at,last_error_code,advisory_id,NULL FROM osv_alias_queue WHERE cve_id=? ORDER BY source LIMIT 25").bind(cve,cve,cve).all()).results); },
