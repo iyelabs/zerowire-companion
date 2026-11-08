@@ -11,4 +11,4 @@ export default {
   async scheduled(_controller, env): Promise<void> {
     await handleScheduledIngestion(env);
   },
-} satisfies ExportedHandler<WorkerEnv>;
+} satisfies ExportedHandler<WorkerEnv & { GITHUB_ADVISORY_TOKEN?:string }>;

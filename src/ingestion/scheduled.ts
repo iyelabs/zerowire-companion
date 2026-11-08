@@ -14,7 +14,7 @@ async function readFeed(response: Response): Promise<string> {
   finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 
-export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string; DB: WorkerEnv["DB"] }): Promise<void> {
+export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string; DB: WorkerEnv["DB"]; GITHUB_ADVISORY_TOKEN?:string }): Promise<void> {
   if (env.INGESTION_ENABLED !== "true") { emitOperationalEvent({ event: "scheduled_disabled", outcome: "disabled" }); return; }
   const db = env.DB; const now = new Date().toISOString();
   const owner = crypto.randomUUID(); const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
@@ -73,7 +73,7 @@ export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string;
     emitOperationalEvent({ event: "scheduled_ingestion", outcome: "failed" }); feedError = error;
   }
   // Enrichment has separate source health and must not mark a successful feed as failed.
-  await enrich(db, owner);
+  await enrich(db, owner, env.GITHUB_ADVISORY_TOKEN);
   if (feedError) throw feedError;
   } finally {
     await db.prepare("DELETE FROM ingestion_lease WHERE name='scheduled' AND owner=?").bind(owner).run();

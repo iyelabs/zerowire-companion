@@ -12,8 +12,12 @@ const LIMIT = 8 * 1024 * 1024;
 type Source = "cisa_kev" | "first_epss";
 type Obj = Record<string, unknown>;
 const obj = (x: unknown): Obj => x && typeof x === "object" && !Array.isArray(x) ? x as Obj : {};
-async function json(url: string): Promise<unknown> {
- const response = await fetch(url,{redirect:"manual",signal:AbortSignal.timeout(20000),headers:{accept:"application/json","user-agent":SOURCE_USER_AGENT}});
+export async function readJsonSource(url: string, githubToken?:string): Promise<unknown> {
+ const parsed=new URL(url);
+ const ghsa=parsed.protocol==='https:' && parsed.hostname==='api.github.com' && !parsed.port && !parsed.username && !parsed.password && parsed.pathname==='/advisories';
+ const headers:Record<string,string>={accept:"application/json","user-agent":SOURCE_USER_AGENT};
+ if(ghsa && githubToken) headers.authorization=`Bearer ${githubToken}`;
+ const response = await fetch(url,{redirect:"manual",signal:AbortSignal.timeout(20000),headers});
  if (!response.ok) { const ghsa=url.startsWith('https://api.github.com/advisories?') && (response.status===403 || response.status===429) ? await githubFailure(response) : null; throw new SourceHttpError(response.status,ghsa); }
  if (!response.body) throw new Error("source_empty_body");
  const reader=response.body.getReader(); const decoder=new TextDecoder(); let size=0; let content="";
@@ -59,8 +63,9 @@ async function nextBatch(db: WorkerEnv["DB"], source: Source): Promise<string[]>
  const next=await fetchBatch(progress?.last_cve ?? "");
  return next.length ? next : (progress?.last_cve ? fetchBatch("") : []);
 }
-export async function enrich(db: WorkerEnv["DB"], owner: string): Promise<void> {
+export async function enrich(db: WorkerEnv["DB"], owner: string, githubToken?:string): Promise<void> {
  const now = new Date().toISOString();
+ const json=(url:string)=>readJsonSource(url,githubToken);
  try {
   // One bounded official download is shared by briefing enrichment and the full catalog.
   const data=obj(await json(KEV));

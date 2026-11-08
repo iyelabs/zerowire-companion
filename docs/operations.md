@@ -57,11 +57,21 @@ Use only isolated, controlled traffic for load tests, not the shared public serv
 ## Upstream limits and recovery
 
 GHSA refresh honors `Retry-After` and primary `X-RateLimit-Reset` values.
-Secondary rate limits use increasing backoff. Five consecutive rate-limit failures,
-unclassified 403s or unsafe retry metadata suspend GHSA rather than retry forever.
-Other sources remain independent. Inspect `ghsa_retry_policy`; resolve the cause
-before an authorized operator resets a suspended policy for a later scheduled
-retry. Public MCP calls cannot change the policy or start a refresh.
+Secondary rate limits use increasing backoff and can suspend refresh. Persistent
+primary rate limiting uses a bounded daily recovery probe after a verified reset;
+unclassified 403s or unsafe retry metadata remain suspended. Other sources remain
+independent. Inspect `ghsa_retry_policy` and the source freshness fields. Public MCP
+calls cannot change the policy or start a refresh.
+
+For more reliable GitHub API capacity, operators may set the optional Worker secret
+`GITHUB_ADVISORY_TOKEN` to a fine-grained GitHub token with public-repository
+read-only access and no additional permissions. Ordinary MCP users do not supply a
+token. Only scheduled requests to `https://api.github.com/advisories` use this
+credential; redirects are not followed, and other upstream sources never receive it.
+Keep the value out of Git, logs, URLs and public tool output. Set an expiry and rotate
+it before expiration. If omitted, GHSA uses unauthenticated access, which is subject
+to a shared IP rate limit. Authentication reduces that risk; it does not guarantee
+availability or remove GitHub limits.
 
 ## Costs and emergency disable
 
