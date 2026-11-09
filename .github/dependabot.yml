@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Weekly grouped proposals; CI must pass before any update is merged.
+  # The cooldown skips versions published in the last seven days.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]

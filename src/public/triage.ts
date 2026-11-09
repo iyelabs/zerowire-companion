@@ -120,8 +120,10 @@ export async function triage(queries:ReadQueries, identifier:string, requested?:
  const selected=requested ?? allSections;const structured=Object.fromEntries(selected.map(name=>[name,sectionSelection(name,item,sections,sourceUrl,requested?.includes("assessment_prompt")??false)]));
  const cves=Array.isArray(item.cves)?item.cves.filter((x):x is string=>typeof x==="string"):[];
  const tags=Array.isArray(item.tags)?item.tags.filter((x):x is string=>typeof x==="string"):[];
+ // A requested CVE leads the bounded evidence list, even when its briefing lists more CVEs than the bound.
+ const evidenceCves=cve&&cves.includes(cve)?[cve,...cves.filter(x=>x!==cve)]:cves;
  const signals=[];
- for(const id of cves.slice(0,8)) {
+ for(const id of evidenceCves.slice(0,8)) {
   const [context,events,kevHistory,epssHistory,series,packages,packageState,kevEvents,packageEvents]=await Promise.all([queries.context(id),queries.signalEvents(id,6),queries.observations(id,"cisa_kev",4),queries.observations(id,"first_epss",4),queries.epssSeries(id),queries.packageAdvisories(id,5),queries.packageState(id),queries.kevChanges(id,6),queries.packageChanges(id,6)]);
   signals.push({cve:id,epss_series:recentEpss(series),affected_software:packageEvidence(packages,packageState),context:context.map(x=>({source_id:x.source_id,retrieved_at:x.retrieved_at,source_date:x.source_date,...compactContext(String(x.source_id),x.data_json)})),
    history:[...kevHistory.slice(0,3),...epssHistory.slice(0,3)].map(x=>({sequence:x.sequence,source_id:x.source_id,source_url:x.source_url,observed_at:x.observed_at,retrieved_at:x.retrieved_at,source_date:x.source_date,...compactContext(String(x.source_id),x.data_json)})),
