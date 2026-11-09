@@ -23,7 +23,11 @@ ingestion path stages the complete CISA KEV catalog in bounded batches and
 enriches tracked CVEs with FIRST EPSS history and selected GHSA/OSV advisory
 evidence. Each source has separate progress and failure state. EPSS series,
 GHSA and OSV refreshes are intentionally selective and do not mirror their
-complete catalogs. Initial KEV staging spans multiple hourly cycles. Upstream redirects are not followed; bodies and request times are bounded.
+complete catalogs. Every new KEV catalog generation, the initial one and each later
+CISA update, is staged at 250 records per hourly run. A catalog of about 1,800
+records therefore takes about eight runs to publish, and the last complete catalog
+stays published until then. KEV context for briefing CVEs is refreshed from each
+download in bounded batches, without waiting for staging. Upstream redirects are not followed; bodies and request times are bounded.
 An upstream failure preserves the last successful data.
 
 ## Read-only MCP

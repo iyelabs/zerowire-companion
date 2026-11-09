@@ -157,6 +157,16 @@ test('multi-CVE triage bounds aggregate evidence and explicitly marks omitted de
  assert.equal(pack.status,'ok');assert.equal(pack.exploitation_intelligence.cves.length,8);assert.equal(pack.exploitation_intelligence.truncated,true);assert.ok(pack.exploitation_intelligence.cves.some(x=>x.details_truncated));assert.deepEqual(pack.identification.cves,cves);
 });
 
+test('a requested CVE keeps its evidence when its briefing lists more than eight CVEs',async t=>{
+ const f=fixture();t.after(()=>f.sql.close());const cves=Array.from({length:10},(_,i)=>`CVE-2099-${10040+i}`),id=f.add('many-cves',cves,html),target=cves.at(-1);
+ f.sql.prepare('INSERT INTO vulnerability_context VALUES (?,?,?,?,?)').run(target,'cisa_kev','2099-01-04T00:00:00.000Z','2099-01-03',JSON.stringify({listed:true,catalog_version:'2099.1',record:{dateAdded:'2099-01-02'}}));
+ const client=await connect(f.db);t.after(()=>client.close());
+ const pack=(await call(client,{identifier:target})).data;
+ assert.equal(pack.identification.id,id);assert.deepEqual(pack.identification.cves,cves);assert.equal(pack.exploitation_intelligence.cves.length,8);assert.equal(pack.exploitation_intelligence.truncated,true);
+ assert.equal(pack.exploitation_intelligence.cves[0].cve,target);assert.equal(pack.exploitation_intelligence.cves[0].context[0].listed,true);
+ const byBriefing=(await call(client,{identifier:id})).data;assert.deepEqual(byBriefing.exploitation_intelligence.cves.map(x=>x.cve),cves.slice(0,8));
+});
+
 test('digest reads each event stream using its observation-time index',async t=>{
  const f=fixture();t.after(()=>f.sql.close());const {createQueries}=await import('../src/public/queries.ts');const plans=[];
  const db={prepare(query){let values=[];return {bind(...v){values=v;return this},async all(){plans.push(f.sql.prepare(`EXPLAIN QUERY PLAN ${query}`).all(...values).map(row=>row.detail));return {results:f.sql.prepare(query).all(...values)}}}}};

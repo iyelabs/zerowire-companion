@@ -7,7 +7,7 @@ provide complete coverage of every CVE or package advisory.
 | Source | Coverage | Important boundary |
 | --- | --- | --- |
 | Zero Wire | Validated official RSS items and observed snapshots | Feed retention and source formatting determine available detail |
-| CISA KEV | Complete validated catalog after the first baseline finishes | A staging generation is not published as a partial complete catalog |
+| CISA KEV | Complete validated catalog after the first baseline finishes | A staging generation is not published as a partial complete catalog; each CISA update takes several hourly runs to appear |
 | FIRST EPSS | Selected CVEs, current scores and up to 30 published daily observations | Missing cache and missing history are not zero probability |
 | GHSA | Selected public records and bounded discovery | Unauthenticated API limits can delay coverage |
 | OSV | Selected records from supported upstreams and aliases | No full mirror or universal upstream license is assumed |

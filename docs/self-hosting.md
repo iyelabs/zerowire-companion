@@ -21,8 +21,11 @@ suite. Review the target account's permissions, source conditions and cost contr
 before exposing an instance. The hosted instance does not require self-hosters
 to use an IyeLabs account, domain or secret.
 
-Prerequisites: Node.js 24.22.2, npm, and a Cloudflare account with Workers and D1
-permissions. Follow Cloudflare's [account selection instructions](https://developers.cloudflare.com/cf/get-started/#select-an-account).
+Prerequisites: Node.js 24.22.2, npm, and a Cloudflare account on the Workers Paid
+plan with Workers and D1 permissions. The configured CPU limit requires the paid
+(Standard) usage model. On Workers Free, each invocation gets 10 ms of CPU and 50 D1
+queries; scheduled ingestion and triage packs for briefings with six or more CVEs
+need more. Follow Cloudflare's [account selection instructions](https://developers.cloudflare.com/cf/get-started/#select-an-account).
 
 ```sh
 npm ci

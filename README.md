@@ -6,7 +6,7 @@ changes through a read-only MCP.
 Maintained by **IyeLabs**. Open-source project code under MIT. Independent and
 unofficial; not affiliated with or endorsed by Cloudflare.
 
-**Hosted MCP:** https://zerowire-companion.iyelabs.com/mcp
+**Hosted MCP:** `https://zerowire-companion.iyelabs.com/mcp`
 
 Anonymous Streamable HTTP · No server API key · Nine read-only tools
 
