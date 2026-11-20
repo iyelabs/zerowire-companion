@@ -2,11 +2,15 @@ import type { Briefing } from "./feed.ts";
 
 import { canonicalText, semanticSections } from "../shared/sections.ts";
 
+// A Radar route move alone does not change the evidence a briefing cites.
+const stableRadarLinks = (value: string | null) =>
+ value?.replace(/https:\/\/radar\.cloudflare\.com\/security\/zero-wire(?=\/|["'\s]|$)/g, "https://radar.cloudflare.com/zero-wire") ?? null;
+
 export function semanticBriefing(item: Briefing): Record<string,unknown> {
- const sections=semanticSections(item.content_html);
+ const sections=semanticSections(stableRadarLinks(item.content_html));
  // Re-derive both old and new snapshots using the same parser, so parser-only
  // differences do not hide a real source change during an upgrade.
- return {title:canonicalText(item.title),description:canonicalText(item.description),cves:item.cves,tags:item.tags,status:canonicalText(item.status),recommended_actions:sections?.["what to do now"]?.text ?? canonicalText(item.recommended_actions),evidence_urls:sections?.["evidence and sources"]?.links ?? item.evidence_urls,sections};
+ return {title:canonicalText(item.title),description:canonicalText(item.description),cves:item.cves,tags:item.tags,status:canonicalText(item.status),recommended_actions:sections?.["what to do now"]?.text ?? canonicalText(item.recommended_actions),evidence_urls:sections?.["evidence and sources"]?.links ?? item.evidence_urls?.map(stableRadarLinks) ?? null,sections};
 }
 export function changeClasses(previous: Record<string,unknown>, current: Record<string,unknown>, fields: string[]): string[] {
  const classes=new Set<string>();

@@ -8,7 +8,7 @@ unofficial; not affiliated with or endorsed by Cloudflare.
 
 **Hosted MCP:** `https://zerowire-companion.iyelabs.com/mcp`
 
-Anonymous Streamable HTTP · No server API key · Nine read-only tools
+Anonymous Streamable HTTP · No server API key · Ten read-only tools
 
 [Connect](#connect) · [Usage](docs/usage.md) · [Sources](#sources-and-coverage) ·
 [Architecture](#how-it-works) · [Self-host](docs/self-hosting.md) ·
@@ -49,6 +49,12 @@ not a web page. Your AI client may have its own subscription or usage costs;
 ZeroWire Companion does not run a paid inference service.
 
 </details>
+
+Use `get_radar_cves` to list recent CVEs from the independently cached
+[Cloudflare Radar CVE feed](https://radar.cloudflare.com/zero-wire/cves/feed?format=json)
+or to look up a CVE ID in that feed window. It includes published dates and
+Radar-reported CVSS when available. Open the linked catalogue page for affected
+versions and fixes.
 
 ## Start with one question
 

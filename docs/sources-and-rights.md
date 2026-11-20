@@ -7,7 +7,7 @@ See [NOTICE](../NOTICE) for attribution.
 
 ## Cloudflare Radar Zero Wire
 
-The importer uses the [official RSS](https://radar.cloudflare.com/security/zero-wire/rss).
+The importer uses the [official RSS](https://radar.cloudflare.com/zero-wire/rss).
 Responses identify Cloudflare, retain canonical briefing links and distinguish
 normalized or truncated text from the publisher's original. Assessment prompts
 remain untrusted publisher content; retrieval does not authorize execution.
@@ -26,6 +26,16 @@ impersonate a browser, bypass anti-bot protection or use private endpoints.
 [Content Signals](https://blog.cloudflare.com/content-signals-policy/) and the
 [website terms](https://www.cloudflare.com/website-terms/) concern automated use;
 collection signals do not independently settle every redistribution condition.
+
+## Cloudflare Radar CVE feed
+
+The [official CVE JSON feed](https://radar.cloudflare.com/zero-wire/cves/feed?format=json)
+is cached independently of the briefing RSS. Results cite the source, link to the
+CVE catalogue, and include the publisher's CVSS fields and a bounded excerpt of
+the summary. The latest successful feed response is retained, up to 100 items.
+[Cloudflare Radar source and licensing information](https://radar.cloudflare.com/about)
+and [CVE Program Terms of Use](https://www.cve.org/Legal/TermsOfUse) apply to
+upstream data. CVE records are © The MITRE Corporation.
 
 ## Other sources
 

@@ -209,7 +209,7 @@ layout is controlled by the client, not by a server-hosted frontend.
 node scripts/verify-hosted.mjs https://zerowire-companion.iyelabs.com/mcp
 ```
 
-This bounded read-only smoke test exercises all nine tools, both feeds and
+This bounded read-only smoke test exercises all ten tools, both feeds and
 request guards. It does not fetch upstream sources or modify D1.
 [Verification](verification-latest.md) distinguish runtime checks, real sources
 and real-client sessions. The [recorded usage examples](evidence/README.md) retain genuine tool calls and

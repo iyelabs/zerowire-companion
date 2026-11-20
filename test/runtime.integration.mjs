@@ -30,7 +30,7 @@ test("built Worker and migration run in local workerd/D1 with external egress de
   });
   try {
     const database = await runtime.getD1Database("DB");
-    const sql = ["0001_intelligence_foundation.sql", "0002_enrichment.sql", "0003_enrichment_progress.sql", "0004_ingestion_lease.sql","0005_signal_history.sql","0006_timeline_indexes.sql","0007_kev_catalog.sql","0008_epss_series.sql","0009_package_intelligence.sql","0010_osv_cve_state.sql","0011_epss_series_attempts.sql","0012_cross_source_timeline_indexes.sql","0013_osv_alias_queue.sql","0014_osv_alias_scan.sql","0015_ghsa_retry_policy.sql"].map(name => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8")).join("\n");
+    const sql = ["0001_intelligence_foundation.sql", "0002_enrichment.sql", "0003_enrichment_progress.sql", "0004_ingestion_lease.sql","0005_signal_history.sql","0006_timeline_indexes.sql","0007_kev_catalog.sql","0008_epss_series.sql","0009_package_intelligence.sql","0010_osv_cve_state.sql","0011_epss_series_attempts.sql","0012_cross_source_timeline_indexes.sql","0013_osv_alias_queue.sql","0014_osv_alias_scan.sql","0015_ghsa_retry_policy.sql","0016_radar_cve_feed.sql"].map(name => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8")).join("\n");
     // This migration has no semicolons in literals; apply its statements as one D1 batch.
     const statements = sql.replace(/^--.*$/gm, "").split(";").map(part => part.trim()).filter(Boolean);
     await database.batch(statements.map(statement => database.prepare(statement)));
@@ -76,9 +76,17 @@ test("scheduled Worker creates a baseline and changes with mocked upstream only"
  const bundle=readFileSync(new URL("bundle/index.js",output),"utf8");
  config.env.DB.id="00000000-0000-0000-0000-000000000002"; config.env.INGESTION_ENABLED.value="true";
  config.manifest={mainModule:"index.js",modulesRoot:"/",modules:{"index.js":{type:"esm",contents:bundle}}};
- let version="one"; let egress=0; let redirect=false;
+ let version="one"; let egress=0; let redirect=false; let failCves=false;
+ const cveUrl="https://radar.cloudflare.com/zero-wire/cves/CVE-2099-10002";
  const runtime=new Miniflare({cf:false,telemetry:{enabled:false},enableDevRegistry:false,resourcePersistencePath:directory,workers:[{config,dev:{outboundService:{type:"fetcher",handler(request){
   egress++; const url=new URL(request.url);
+  if(url.pathname==="/zero-wire/cves/feed") {
+   if(failCves) return new Response(null,{status:503});
+   return Response.json({version:"https://jsonfeed.org/version/1.1",items:[{
+    id:cveUrl,url:cveUrl,summary:"Synthetic CVE feed record",date_published:"2099-01-01T00:00:00Z",
+    _cve:{id:"CVE-2099-10002",score:7.5,cvss_version:"3.1",severity:"HIGH"}
+   }]});
+  }
   if(url.hostname==="radar.cloudflare.com" && redirect) return new Response(null,{status:302,headers:{location:"https://attacker.invalid/"}});
   if(url.hostname==="radar.cloudflare.com") return new Response(`<rss><channel><item><title>${version}</title><link>https://radar.cloudflare.com/security/zero-wire/example</link><category>CVE-2099-10001</category></item></channel></rss>`);
   if(url.hostname==="www.cisa.gov") return Response.json({catalogVersion:"1",dateReleased:"2099-01-01",count:1,vulnerabilities:[{cveID:"CVE-2099-19000",vendorProject:"Other",product:"Other",dateAdded:"2099-01-01"}]});
@@ -87,7 +95,7 @@ test("scheduled Worker creates a baseline and changes with mocked upstream only"
  }}}}]});
  try {
   const db=await runtime.getD1Database("DB");
-  const sql=["0001_intelligence_foundation.sql","0002_enrichment.sql","0003_enrichment_progress.sql","0004_ingestion_lease.sql","0005_signal_history.sql","0006_timeline_indexes.sql","0007_kev_catalog.sql","0008_epss_series.sql","0009_package_intelligence.sql","0010_osv_cve_state.sql","0011_epss_series_attempts.sql","0012_cross_source_timeline_indexes.sql","0013_osv_alias_queue.sql","0014_osv_alias_scan.sql","0015_ghsa_retry_policy.sql"].map(name=>readFileSync(new URL(`../migrations/${name}`,import.meta.url),"utf8")).join("\n");
+  const sql=["0001_intelligence_foundation.sql","0002_enrichment.sql","0003_enrichment_progress.sql","0004_ingestion_lease.sql","0005_signal_history.sql","0006_timeline_indexes.sql","0007_kev_catalog.sql","0008_epss_series.sql","0009_package_intelligence.sql","0010_osv_cve_state.sql","0011_epss_series_attempts.sql","0012_cross_source_timeline_indexes.sql","0013_osv_alias_queue.sql","0014_osv_alias_scan.sql","0015_ghsa_retry_policy.sql","0016_radar_cve_feed.sql"].map(name=>readFileSync(new URL(`../migrations/${name}`,import.meta.url),"utf8")).join("\n");
   await db.batch(sql.replace(/^--.*$/gm,"").split(";").map(x=>x.trim()).filter(Boolean).map(x=>db.prepare(x)));
   const worker=await runtime.getWorker(); assert.equal((await worker.scheduled({cron:"0 * * * *"})).outcome,"ok");
   assert.equal((await db.prepare("SELECT count(*) n FROM briefings").first()).n,1); assert.equal((await db.prepare("SELECT count(*) n FROM change_events").first()).n,0);
@@ -99,6 +107,17 @@ test("scheduled Worker creates a baseline and changes with mocked upstream only"
    const result=await reply.json();assert.equal(reply.status,200);assert.equal(result.result.isError,undefined,JSON.stringify(result));assert.equal(JSON.parse(result.result.content[0].text).data.status,"ok");
   }
   assert.equal(egress,before);assert.equal((await db.prepare("SELECT count(*) n FROM change_events").first()).n,1);
-  redirect=true; const previous=egress; assert.equal((await worker.scheduled({cron:"0 * * * *"})).outcome,"exception"); assert.equal(egress,previous+3); assert.equal((await db.prepare("SELECT count(*) n FROM briefings").first()).n,1);
+  const queryRadar=async()=>{
+   const reply=await runtime.dispatchFetch("https://deployment.example/mcp",{method:"POST",headers:{"content-type":"application/json",accept:"application/json, text/event-stream"},body:JSON.stringify({jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"get_radar_cves",arguments:{cve:"cve-2099-10002"}}})});
+   const result=await reply.json();assert.equal(result.result.isError,undefined,JSON.stringify(result));
+   return JSON.parse(result.result.content[0].text).data;
+  };
+  const radar=await queryRadar();assert.equal(radar.status,"fresh");assert.equal(radar.items[0].source_url,cveUrl);
+  assert.equal(radar.items[0].cvss_score,7.5);assert.equal(egress,before);
+  failCves=true;
+  assert.equal((await worker.scheduled({cron:"0 * * * *"})).outcome,"ok");
+  const stale=await queryRadar();assert.equal(stale.status,"stale");assert.deepEqual(stale.items,radar.items);
+  assert.equal(stale.state.last_success_at,radar.state.last_success_at);
+  redirect=true; const previous=egress; assert.equal((await worker.scheduled({cron:"0 * * * *"})).outcome,"exception"); assert.equal(egress,previous+4); assert.equal((await db.prepare("SELECT count(*) n FROM briefings").first()).n,1);
  } finally {await runtime.dispose();rmSync(directory,{recursive:true,force:true})}
 });

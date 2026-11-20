@@ -17,10 +17,17 @@ Run a bounded read-only smoke check with:
 node scripts/verify-hosted.mjs https://zerowire-companion.iyelabs.com/mcp
 ```
 
-It checks nine tools, both feeds, sample data, request guards and output bounds.
+It checks ten tools, both feeds, sample data, request guards and output bounds.
 Repeated runs may reach the rate limit. This is not a load test or a source sync.
 Keep TLS verification enabled. An organization CA may require
 `NODE_USE_SYSTEM_CA=1`; never disable certificate validation.
+
+The scheduled job polls the Zero Wire briefing RSS and the Radar CVE JSON feed.
+The briefings retain their existing identifiers even if their published URLs
+change. The CVE cache holds up to 100 entries from the last successful feed
+response and reports its own freshness. Older CVEs may be outside this window.
+Radar reports its CVE data sources and licensing policy on its
+[About page](https://radar.cloudflare.com/about).
 
 ## Deployment configuration
 

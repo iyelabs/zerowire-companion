@@ -1,6 +1,7 @@
 import { SOURCE_USER_AGENT } from '../shared/version.ts';
 import type { WorkerEnv } from "../../cloudflare.config.ts";
 import { emitOperationalEvent } from "../observability.ts";
+import { refreshRadarCves } from "./radar-cve.ts";
 import { enrich } from "./enrichment.ts";
 import { fencedBatch } from "./lease.ts";
 import { FEED_URL, NORMALIZER_VERSION, parseFeed, sha256, type Briefing } from "./feed.ts";
@@ -33,7 +34,7 @@ export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string;
       const semantic = semanticBriefing(item);
       const hash = await sha256(JSON.stringify(semantic));
       const latest = await db.prepare("SELECT revision, semantic_hash, normalizer_version, normalized_json, source_guid, source_feed_pub_date, source_last_checked_date FROM briefing_snapshots WHERE briefing_id = ? ORDER BY revision DESC LIMIT 1").bind(item.id).first<{revision:number; semantic_hash:string; normalizer_version:string; normalized_json:string; source_guid:string|null; source_feed_pub_date:string|null; source_last_checked_date:string|null}>();
-      statements.push(db.prepare("INSERT INTO briefings(id,canonical_url,first_observed_at,last_observed_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET last_observed_at=excluded.last_observed_at").bind(item.id,item.canonical_url,now,now));
+      statements.push(db.prepare("INSERT INTO briefings(id,canonical_url,first_observed_at,last_observed_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET canonical_url=excluded.canonical_url,last_observed_at=excluded.last_observed_at").bind(item.id,item.canonical_url,now,now));
       const previous = latest ? JSON.parse(latest.normalized_json) as Briefing : null;
       if (previous && (!Array.isArray(previous.cves) || !Array.isArray(previous.tags) || !(typeof previous.content_html === "string" || previous.content_html === null))) throw new Error("normalizer_comparison_unavailable");
       const previousSemantic = previous ? semanticBriefing(previous) : null;
@@ -65,14 +66,15 @@ export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string;
         statements.push(db.prepare("INSERT INTO change_events(event_id,briefing_id,from_revision,to_revision,event_kind,observed_at,diff_json) VALUES(?,?,?,?,?,?,?)").bind(`${item.id}#${rev}`,item.id,latest?.revision ?? null,rev,latest ? "changed" : "first_observed",now,JSON.stringify({ changed_fields: fields, set_changes: sets, guidance, classifications: previousSemantic ? changeClasses(previousSemantic, semantic, fields) : ["briefing.first_observed"] })));
       }
     }
-    statements.push(db.prepare("INSERT INTO source_state(source_id,source_url,last_attempt_at,last_success_at,baseline_at,last_error_code) VALUES('zero_wire',?,?,?,?,NULL) ON CONFLICT(source_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,baseline_at=COALESCE(source_state.baseline_at,excluded.baseline_at),last_error_code=NULL").bind(FEED_URL,now,now,now));
+    statements.push(db.prepare("INSERT INTO source_state(source_id,source_url,last_attempt_at,last_success_at,baseline_at,last_error_code) VALUES('zero_wire',?,?,?,?,NULL) ON CONFLICT(source_id) DO UPDATE SET source_url=excluded.source_url,last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,baseline_at=COALESCE(source_state.baseline_at,excluded.baseline_at),last_error_code=NULL").bind(FEED_URL,now,now,now));
     await fencedBatch(db, owner, statements);
     emitOperationalEvent({ event: "scheduled_ingestion", outcome: "success", count: feed.length });
   } catch (error) {
-    await fencedBatch(db, owner, [db.prepare("INSERT INTO source_state(source_id,source_url,last_attempt_at,last_error_code) VALUES('zero_wire',?,?,'ingestion_failed') ON CONFLICT(source_id) DO UPDATE SET last_attempt_at=excluded.last_attempt_at,last_error_code=excluded.last_error_code").bind(FEED_URL,now)]);
+    await fencedBatch(db, owner, [db.prepare("INSERT INTO source_state(source_id,source_url,last_attempt_at,last_error_code) VALUES('zero_wire',?,?,'ingestion_failed') ON CONFLICT(source_id) DO UPDATE SET source_url=excluded.source_url,last_attempt_at=excluded.last_attempt_at,last_error_code=excluded.last_error_code").bind(FEED_URL,now)]);
     emitOperationalEvent({ event: "scheduled_ingestion", outcome: "failed" }); feedError = error;
   }
   // Enrichment has separate source health and must not mark a successful feed as failed.
+  await refreshRadarCves(db, owner, now);
   await enrich(db, owner, env.GITHUB_ADVISORY_TOKEN);
   if (feedError) throw feedError;
   } finally {

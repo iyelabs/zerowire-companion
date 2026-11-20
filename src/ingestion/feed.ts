@@ -1,7 +1,8 @@
+import { radarBriefingIdentity } from "../shared/radar-briefing.ts";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { headingSpans, safeLinks, semanticSections, stripMarkup, stripUnsafeBlocks } from "../shared/sections.ts";
 
-export const FEED_URL = "https://radar.cloudflare.com/security/zero-wire/rss";
+export const FEED_URL = "https://radar.cloudflare.com/zero-wire/rss";
 export const NORMALIZER_VERSION = "3";
 export interface Briefing {
   id: string; canonical_url: string; title: string; description: string | null;
@@ -48,24 +49,23 @@ export function parseFeed(xml: string): Briefing[] {
   return items.map(raw => {
     const item = asNode(raw); const rawUrl = text(item.link); const title = text(item.title);
     if (!rawUrl || !title) throw new Error("missing_identity_or_title");
-    const url = new URL(rawUrl);
-    if (url.protocol !== "https:" || url.hostname !== "radar.cloudflare.com" || url.port || url.username || url.password || !/^\/security\/zero-wire\/[a-z0-9][a-z0-9-]*\/?$/.test(url.pathname)) throw new Error("invalid_briefing_url");
-    url.pathname = url.pathname.replace(/\/$/, ""); url.search = ""; url.hash = "";
-    const canonical_url = url.toString();
-    if (seen.has(canonical_url)) throw new Error("duplicate_briefing_identity");
-    seen.add(canonical_url);
+    const identity = radarBriefingIdentity(rawUrl);
+    if (!identity) throw new Error("invalid_briefing_url");
+    const { id, canonicalUrl: canonical_url } = identity;
+    if (seen.has(id)) throw new Error("duplicate_briefing_identity");
+    seen.add(id);
     const cves = new Set<string>(); const tags = new Set<string>(); let status: string | null = null;
     for (const value of array(item.category)) {
       const category = text(value); const domain = text(asNode(value)["@_domain"]);
       if (!category) continue;
       if (/^CVE-/i.test(category)) { if(category.length>32 || !/^CVE-\d{4}-\d{4,}$/i.test(category)) throw new Error("invalid_cve_category"); cves.add(category.toUpperCase()); }
-      else if (domain?.startsWith("https://radar.cloudflare.com/security/zero-wire/tag/") && ![...tags].some(tag => tag.toLowerCase() === category.toLowerCase())) tags.add(category);
+      else if (domain && /^https:\/\/radar\.cloudflare\.com\/(?:security\/)?zero-wire\/tag\/[a-z0-9][a-z0-9-]*\/?$/.test(domain) && ![...tags].some(tag => tag.toLowerCase() === category.toLowerCase())) tags.add(category);
       else if (!domain && status === null) status = category;
     }
     const content_html = text(item["content:encoded"]);
     const plain = content_html ? stripMarkup(stripUnsafeBlocks(content_html)).replace(/\s+/g, " ") : "";
     const source_last_checked_date = plain.match(/\bLast checked\s*:?\s*(?:on\s+)?(\d{4}-\d{2}-\d{2}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})/i)?.[1] ?? null;
-    return { id: canonical_url, canonical_url, title, description: text(item.description), content_html, recommended_actions: extractActions(content_html), evidence_urls: extractEvidence(content_html), source_guid: text(item.guid), source_feed_pub_date: text(item.pubDate), source_last_checked_date, cves: [...cves].sort(), tags: [...tags].sort((a,b) => a.localeCompare(b, "en")), status };
+    return { id, canonical_url, title, description: text(item.description), content_html, recommended_actions: extractActions(content_html), evidence_urls: extractEvidence(content_html), source_guid: text(item.guid), source_feed_pub_date: text(item.pubDate), source_last_checked_date, cves: [...cves].sort(), tags: [...tags].sort((a,b) => a.localeCompare(b, "en")), status };
   });
 }
 

@@ -1,3 +1,4 @@
+import { RADAR_CVE_CATALOG_URL, RADAR_CVE_FEED_URL } from "../shared/radar-cve.ts";
 import { assessmentPrompt } from '../shared/assessment-prompt.ts';
 import { PROJECT_VERSION } from '../shared/version.ts';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -44,7 +45,7 @@ function safeRow(row: Record<string, unknown>, detail = false): Record<string,un
 }
 
 const attribution = [
- { source:"Cloudflare Radar Zero Wire", url:"https://radar.cloudflare.com/security/zero-wire", feed:"https://radar.cloudflare.com/security/zero-wire/rss", license_note:"Refer to Cloudflare's Radar licensing policy; applicability to briefing text remains unverified.", license_policy:"https://radar.cloudflare.com/about" },
+ { source:"Cloudflare Radar Zero Wire", url:"https://radar.cloudflare.com/zero-wire", feed:"https://radar.cloudflare.com/zero-wire/rss", license_note:"Refer to Cloudflare's Radar licensing policy; applicability to briefing text remains unverified.", license_policy:"https://radar.cloudflare.com/about" },
  { source:"CISA Known Exploited Vulnerabilities Catalog", url:"https://www.cisa.gov/known-exploited-vulnerabilities-catalog" },
  { source:"FIRST EPSS", url:"https://www.first.org/epss/" },
  { source:"GitHub Security Advisories", url:"https://github.com/advisories", license_note:"GitHub Advisory Database content is CC BY 4.0; preserve source attribution." },
@@ -89,6 +90,18 @@ export async function handleMcp(request:Request, queries: ReadQueries): Promise<
  server.registerTool("get_vulnerability_context",{description:"Get cached KEV and EPSS source observations for a CVE.",inputSchema:{cve:z.string().regex(/^CVE-\d{4}-\d{4,}$/i)},annotations:{readOnlyHint:true}},async ({cve})=>{const id=cve.toUpperCase();const [sources,freshness,catalog,record]=await Promise.all([queries.context(id),queries.sources(),queries.kevState(),queries.kev(id)]);return output({cve:id,sources,freshness,kev_catalog:{status:record?"listed":catalog?.baseline_at?"not_listed_in_cached_catalog":"unknown_baseline_incomplete",catalog_version:catalog?.catalog_version??null,source_date:catalog?.source_date??null,retrieved_at:catalog?.retrieved_at??null,last_error_code:catalog?.last_error_code??null,source_url:"https://www.cisa.gov/known-exploited-vulnerabilities-catalog",note:"Cached catalog result; a failed refresh may leave stale data. Absence does not rule out exploitation."}});});
  server.registerTool("get_triage_pack",{description:"Investigate a CVE or briefing with one source-backed pack, including cached KEV and EPSS context. Multiple briefing matches are listed separately; relevance is not exposure. Request sections: [assessment_prompt] for the publisher prompt, when present; retrieval does not execute it.",inputSchema:{identifier:z.string().min(1).max(300),sections:z.array(z.enum(TRIAGE_SECTION_NAMES)).max(8).optional()},annotations:{readOnlyHint:true}},async ({identifier,sections})=>output(await triage(queries,identifier,sections)));
  server.registerTool("get_signal_timeline",{description:"Review locally observed briefing and CVE evidence in reverse observation order. Limit is at most 15. Publisher chronology is a separate narrative.",inputSchema:{identifier:z.string().min(1).max(300),since:z.string().datetime({offset:true}).optional(),until:z.string().datetime({offset:true}).optional(),limit:z.number().int().min(1).max(15).default(10),cursor:z.object({observed_at:z.string().datetime({offset:true}),kind:z.enum(["briefing_change","first_observed","kev_change","package_change","signal_change","source_observation"]),sequence:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)}).strict().optional()},annotations:{readOnlyHint:true}},async ({identifier,since,until,limit,cursor})=>{const start=since?new Date(since).toISOString():"",end=until?new Date(until).toISOString():"";if(start&&end&&start>end)throw new Error("since must not be later than until");return output(await timeline(queries,identifier,start,end,limit,cursor?{...cursor,observed_at:new Date(cursor.observed_at).toISOString()}:undefined));});
+ server.registerTool("get_radar_cves", {
+  description:"List recent CVEs from the Cloudflare Radar CVE feed or look up an exact CVE in the current cached feed window. Separate from the curated Zero Wire briefings. Scores are reported by Radar.",
+  inputSchema:{cve:z.string().max(32).regex(/^CVE-\d{4}-\d{4,}$/i).optional(),limit:z.number().int().min(1).max(15).default(10)},
+  annotations:{readOnlyHint:true},
+ }, async ({cve,limit}) => {
+  const [state,items]=await Promise.all([queries.radarCveFeedState(),queries.radarCves(cve?.toUpperCase(),limit)]);
+  const status=!state?.last_success_at?"unavailable":state.last_error_code || Date.now()-Date.parse(state.last_success_at)>2*3600_000?"stale":"fresh";
+  return output({
+   source:{name:"Cloudflare Radar Zero Wire CVE feed",catalog_url:RADAR_CVE_CATALOG_URL,feed_url:RADAR_CVE_FEED_URL,licensing_policy:"https://radar.cloudflare.com/about",cve_attribution:"CVE records © The MITRE Corporation, https://www.cve.org/Legal/TermsOfUse"},
+   status,state,items,coverage:"Latest successful feed window, up to 100 records. Older or absent entries may still exist in the Radar catalogue. For affected versions and fixes, open the linked CVE page.",
+  });
+ });
  const transport=new WebStandardStreamableHTTPServerTransport({enableJsonResponse:true});
  await server.connect(transport); return transport.handleRequest(request);
 }

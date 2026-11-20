@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { handleScheduledIngestion } from "../src/ingestion/scheduled.ts";
 function database() {
  const sql = new DatabaseSync(":memory:"); sql.exec("PRAGMA foreign_keys=ON"); sql.exec(readFileSync(new URL("../migrations/0001_intelligence_foundation.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0002_enrichment.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0003_enrichment_progress.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0004_ingestion_lease.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0005_signal_history.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0006_timeline_indexes.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0007_kev_catalog.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0008_epss_series.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0009_package_intelligence.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0010_osv_cve_state.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0011_epss_series_attempts.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0012_cross_source_timeline_indexes.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0013_osv_alias_queue.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0014_osv_alias_scan.sql",import.meta.url),"utf8")); sql.exec(readFileSync(new URL("../migrations/0015_ghsa_retry_policy.sql",import.meta.url),"utf8"));
+ sql.exec(readFileSync(new URL("../migrations/0016_radar_cve_feed.sql",import.meta.url),"utf8"));
  const adapter = { prepare(query) { let params=[]; return { bind(...v) { params=v; return this; }, async first() { return sql.prepare(query).get(...params) ?? null; }, async all() { return {results:sql.prepare(query).all(...params)}; }, async run() { return sql.prepare(query).run(...params); } }; }, async batch(statements) { sql.exec("BEGIN"); try { for (const stmt of statements) await stmt.run(); sql.exec("COMMIT"); } catch(e) { sql.exec("ROLLBACK"); throw e; } } };
  return {sql, adapter};
 }
@@ -212,4 +213,26 @@ test('empty or partially malformed KEV catalog never produces false negative mem
  t.mock.method(globalThis,'fetch',async url=>{const u=String(url);if(u.includes('zero-wire'))return new Response(feed(item('kev-validation','Tracked','CVE-2099-10001')));if(u.includes('cisa.gov')){const rows=mode==='valid'?[{cveID:'CVE-2099-10001',vendorProject:'Vendor',product:'Product',dateAdded:'2099-01-01'}]:mode==='empty'?[]:[{cveID:'CVE-2099-10002',vendorProject:'Vendor',dateAdded:'2099-01-01'}];return Response.json({catalogVersion:'1',dateReleased:'2099-01-01',count:rows.length,vulnerabilities:rows})}return Response.json({status:'OK',total:0,data:[]});});
  const run=()=>handleScheduledIngestion({INGESTION_ENABLED:'true',DB:adapter});await run();assert.equal(JSON.parse(sql.prepare("SELECT data_json FROM vulnerability_context WHERE source_id='cisa_kev'").get().data_json).listed,true);
  for(mode of ['empty','partial']){await run();assert.equal(JSON.parse(sql.prepare("SELECT data_json FROM vulnerability_context WHERE source_id='cisa_kev'").get().data_json).listed,true);assert.equal(sql.prepare("SELECT last_error_code FROM source_state WHERE source_id='cisa_kev'").get().last_error_code,'enrichment_failed');assert.equal(sql.prepare('SELECT count(*) n FROM signal_events').get().n,0);}
+});
+
+test("Radar path move keeps briefing IDs, first observations and change history", async t => {
+ const {sql,adapter}=database();
+ t.after(()=>sql.close());
+ const old=feed(item("one","Before"),item("two","Stable","CVE-2099-10001"));
+ let body=old;
+ t.mock.method(globalThis,"fetch",async()=>new Response(body));
+ const run=()=>handleScheduledIngestion({INGESTION_ENABLED:"true",DB:adapter});
+ await run();
+ body=old.replace("Before","After");
+ await run();
+ const oldRows=sql.prepare("SELECT id,first_observed_at FROM briefings ORDER BY id").all();
+ const oldHistory=sql.prepare("SELECT * FROM change_events ORDER BY sequence").all();
+ body=body.replaceAll("/security/zero-wire/","/zero-wire/");
+ await run();
+ assert.deepEqual(sql.prepare("SELECT id,first_observed_at FROM briefings ORDER BY id").all(),oldRows);
+ assert.deepEqual(sql.prepare("SELECT * FROM change_events ORDER BY sequence").all(),oldHistory);
+ assert.equal(sql.prepare("SELECT canonical_url FROM briefings WHERE id LIKE '%/two'").get().canonical_url,"https://radar.cloudflare.com/zero-wire/two");
+ const {createQueries}=await import("../src/public/queries.ts");
+ const queries=createQueries(adapter);
+ assert.deepEqual(await queries.get(oldRows[1].id),await queries.get("https://radar.cloudflare.com/zero-wire/two"));
 });

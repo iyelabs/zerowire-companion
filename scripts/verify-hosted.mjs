@@ -36,7 +36,7 @@ try {
   assert.equal((await health.json()).status, 'ok'); // Liveness only.
   await client.connect(new StreamableHTTPClientTransport(endpoint, { fetch: boundedFetch }));
   const tools = (await client.listTools()).tools;
-  assert.deepEqual(tools.map(x => x.name).sort(), ['get_briefing','get_recent_changes','get_vulnerability_context','list_briefings','match_briefings','get_triage_pack','get_signal_timeline','search_kev','get_intelligence_digest'].sort());
+  assert.deepEqual(tools.map(x => x.name).sort(), ['get_briefing','get_recent_changes','get_vulnerability_context','list_briefings','match_briefings','get_triage_pack','get_signal_timeline','search_kev','get_intelligence_digest','get_radar_cves'].sort());
   assert.ok(tools.every(x => x.annotations?.readOnlyHint === true));
   const briefings = await call('list_briefings', { limit: 15 });
   assert.ok(briefings.length > 0 && briefings.length <= 15, 'Populated source data required');
@@ -46,7 +46,7 @@ try {
   assert.equal(match.reason.term, sample.tags[0].toLowerCase());
   assert.ok(match.matches.some(x => x.id === sample.id));
   const detail = await call('get_briefing', { id: sample.id });
-  assert.equal(detail.canonical_url, sample.id);
+  assert.equal(detail.canonical_url, sample.canonical_url);
   assert.ok(Array.isArray(detail.truncated_fields));
   assert.ok(detail.evidence_urls.every(x => new URL(x).protocol === 'https:'));
   const context = await call('get_vulnerability_context', { cve: sample.cves[0] });
@@ -63,7 +63,7 @@ try {
   assert.ok(changes.length <= 20);
   const pack = await call('get_triage_pack', { identifier: sample.id });
   assert.equal(pack.status, 'ok');
-  assert.equal(pack.identification.canonical_url, sample.id);
+  assert.equal(pack.identification.canonical_url, sample.canonical_url);
   const timeline = await call('get_signal_timeline', { identifier: sample.id, limit: 5 });
   assert.equal(timeline.status, 'ok');
   assert.ok(Array.isArray(timeline.events));
@@ -73,6 +73,11 @@ try {
   const digest = await call('get_intelligence_digest', { limit: 5 });
   assert.ok(Array.isArray(digest.items));
   assert.ok(digest.scan.events_examined <= digest.scan.maximum_events_examined);
+  const radar = await call('get_radar_cves', { limit: 2 });
+  assert.equal(radar.status, 'fresh', 'Radar CVE feed is stale or unavailable');
+  assert.ok(radar.items.length > 0 && radar.items.length <= 2);
+  const exactRadar = await call('get_radar_cves', { cve: radar.items[0].cve_id });
+  assert.equal(exactRadar.items[0]?.cve_id, radar.items[0].cve_id);
   checkGhsa(digest.freshness.ghsa_discovery);
   // A bounded sample cannot establish global coverage. Operators may provide
   // known failing CVEs via SMOKE_OSV_CVES (comma-separated, at most 5).
@@ -100,7 +105,7 @@ try {
     guards[name] = response.status;
     assert.ok(Array.isArray(expected) ? expected.includes(response.status) : response.status === expected, `${name} unexpected status ${response.status}`);
   }
-  console.log(JSON.stringify({ observed_at: new Date().toISOString(), endpoint: endpoint.href, tls_verification: true, tools_called: [...new Set(calls)], briefing_count_in_page: briefings.length, tag_match: match.reason, matching_briefings: match.matches.length, cve: context.cve, context_source_ids: context.sources.map(x => x.source_id), source_health: context.freshness, ghsa_discovery: digest.freshness.ghsa_discovery, osv_sample: osvHealth, osv_scope: 'sample only; not global coverage', observed_change_events_in_page: changes.length, kev_catalog_status:kev.availability, kev_catalog_record_count:kev.catalog_state?.record_count??null, digest_events_in_page:digest.items.length, feeds_verified:true, invalid_limit_rejected: true, guards, max_observed_response_bytes: Math.max(...sizes), scope: 'Bounded live read-only smoke; not a load, legal, or full security audit' }, null, 2));
+  console.log(JSON.stringify({ observed_at: new Date().toISOString(), endpoint: endpoint.href, tls_verification: true, tools_called: [...new Set(calls)], briefing_count_in_page: briefings.length, tag_match: match.reason, matching_briefings: match.matches.length, cve: context.cve, context_source_ids: context.sources.map(x => x.source_id), source_health: context.freshness, radar_cve_feed: radar.state, ghsa_discovery: digest.freshness.ghsa_discovery, osv_sample: osvHealth, osv_scope: 'sample only; not global coverage', observed_change_events_in_page: changes.length, kev_catalog_status:kev.availability, kev_catalog_record_count:kev.catalog_state?.record_count??null, digest_events_in_page:digest.items.length, feeds_verified:true, invalid_limit_rejected: true, guards, max_observed_response_bytes: Math.max(...sizes), scope: 'Bounded live read-only smoke; not a load, legal, or full security audit' }, null, 2));
 } finally {
   await client.close();
 }
