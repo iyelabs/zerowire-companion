@@ -3,7 +3,8 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { headingSpans, safeLinks, semanticSections, stripMarkup, stripUnsafeBlocks } from "../shared/sections.ts";
 
 export const FEED_URL = "https://radar.cloudflare.com/zero-wire/rss";
-export const NORMALIZER_VERSION = "3";
+export const BRIEFING_JSON_URL = "https://radar.cloudflare.com/zero-wire/feed?format=json";
+export const NORMALIZER_VERSION = "4";
 export interface Briefing {
   id: string; canonical_url: string; title: string; description: string | null;
   content_html: string | null; source_guid: string | null; source_feed_pub_date: string | null; source_last_checked_date: string | null;
@@ -29,7 +30,8 @@ function section(html: string | null, title: string): string | null {
   return clean.slice(heading.end,headings[index+1]?.index ?? clean.length);
 }
 function extractActions(html: string | null): string | null {
-  const value=semanticSections(html)?.["what to do now"]?.text;
+  const sections=semanticSections(html);
+  const value=(sections?.["recommended actions"] ?? sections?.["what to do now"])?.text;
   return value ? Array.from(value).slice(0,6000).join("") : null;
 }
 function extractEvidence(html: string | null): string[] | null {
@@ -66,6 +68,37 @@ export function parseFeed(xml: string): Briefing[] {
     const plain = content_html ? stripMarkup(stripUnsafeBlocks(content_html)).replace(/\s+/g, " ") : "";
     const source_last_checked_date = plain.match(/\bLast checked\s*:?\s*(?:on\s+)?(\d{4}-\d{2}-\d{2}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})/i)?.[1] ?? null;
     return { id, canonical_url, title, description: text(item.description), content_html, recommended_actions: extractActions(content_html), evidence_urls: extractEvidence(content_html), source_guid: text(item.guid), source_feed_pub_date: text(item.pubDate), source_last_checked_date, cves: [...cves].sort(), tags: [...tags].sort((a,b) => a.localeCompare(b, "en")), status };
+  });
+}
+
+/** Restore structured fields omitted by the current RSS rendering. */
+export function attachRadarBriefingMetadata(briefings: Briefing[], raw: unknown): Briefing[] {
+  const json = asNode(raw);
+  if (json.version !== "https://jsonfeed.org/version/1.1" || !Array.isArray(json.items) || json.items.length > 500) {
+    throw new Error("invalid_briefing_metadata_feed");
+  }
+  const metadata = new Map<string, {cves:string[]; action:string; reviewed:string}>();
+  for (const entry of json.items) {
+    const row = asNode(entry);
+    const url = text(row.url);
+    const identity = url ? radarBriefingIdentity(url) : null;
+    const fields = asNode(row._zero_wire);
+    const reviewed = fields.last_reviewed;
+    const action = fields.main_action;
+    if (!identity || row.id !== row.url || fields.slug !== identity.id.split("/").at(-1) || metadata.has(identity.id)
+      || typeof reviewed !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(reviewed)
+      || typeof action !== "string" || !/^[a-z][a-z_-]{0,39}$/.test(action)
+      || !Array.isArray(fields.cves) || fields.cves.length > 50
+      || fields.cves.some(cve => typeof cve !== "string" || cve.length > 32 || !/^CVE-\d{4}-\d{4,}$/.test(cve))) {
+      throw new Error("invalid_briefing_metadata");
+    }
+    metadata.set(identity.id, {cves:[...new Set<string>(fields.cves)].sort(),action,reviewed});
+  }
+  return briefings.map(briefing => {
+    if (briefing.canonical_url === briefing.id) return briefing;
+    const fields = metadata.get(briefing.id);
+    if (!fields) throw new Error("missing_briefing_metadata");
+    return {...briefing,cves:fields.cves,status:fields.action,source_last_checked_date:fields.reviewed};
   });
 }
 

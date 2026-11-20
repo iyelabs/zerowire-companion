@@ -71,7 +71,7 @@ function sectionSelection(name:SectionName, item:Row, sections:ReturnType<typeof
  if(name==="assessment_prompt")return assessmentPrompt(item.content_html,url,includePrompt);
  const lookup:Record<Exclude<SectionName,"overview"|"other_sections"|"assessment_prompt">,string[]>={
   what_happened:["what happened"],why_it_matters:["why this needs attention","why it remains relevant","why it matters"],
-  affected_scope:["who should investigate","who is affected","affected scope"],recommended_actions:["what to do now"],source_chronology:["update chronology"]
+  affected_scope:["who should investigate","who is affected","affected scope","affected deployments"],recommended_actions:["recommended actions","what to do now"],source_chronology:["update chronology","updates"]
  };
  if(name==="overview")return {availability:typeof item.description==="string"?"available":"unavailable",...clip(item.description,1100),source_url:url};
  if(name==="other_sections") {

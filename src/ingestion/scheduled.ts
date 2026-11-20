@@ -4,7 +4,7 @@ import { emitOperationalEvent } from "../observability.ts";
 import { refreshRadarCves } from "./radar-cve.ts";
 import { enrich } from "./enrichment.ts";
 import { fencedBatch } from "./lease.ts";
-import { FEED_URL, NORMALIZER_VERSION, parseFeed, sha256, type Briefing } from "./feed.ts";
+import { BRIEFING_JSON_URL, FEED_URL, NORMALIZER_VERSION, attachRadarBriefingMetadata, parseFeed, sha256, type Briefing } from "./feed.ts";
 import { semanticBriefing, changeClasses } from "./semantic.ts";
 
 const MAX_FEED_BYTES = 1024 * 1024;
@@ -25,7 +25,11 @@ export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string;
   try {
   try {
     const response = await fetch(FEED_URL, { redirect: "manual", signal: AbortSignal.timeout(15000), headers: { accept: "application/rss+xml, application/xml", "user-agent": SOURCE_USER_AGENT } });
-    const feed = parseFeed(await readFeed(response));
+    let feed = parseFeed(await readFeed(response));
+    if (feed.some(item => item.id !== item.canonical_url)) {
+      const json = await fetch(BRIEFING_JSON_URL, { redirect: "manual", signal: AbortSignal.timeout(15000), headers: { accept: "application/feed+json", "user-agent": SOURCE_USER_AGENT } });
+      feed = attachRadarBriefingMetadata(feed, JSON.parse(await readFeed(json)));
+    }
     const state = await db.prepare("SELECT baseline_at FROM source_state WHERE source_id = 'zero_wire'").first<{ baseline_at: string | null }>();
     const baseline = !state?.baseline_at;
     const statements: D1PreparedStatement[] = [];
@@ -48,6 +52,10 @@ export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string;
       statements.push(db.prepare("DELETE FROM briefing_tags WHERE briefing_id = ?").bind(item.id));
       for (const tag of item.tags) statements.push(db.prepare("INSERT INTO briefing_tags(briefing_id,normalized_tag,display_tag) VALUES(?,?,?)").bind(item.id,tag.toLowerCase(),tag));
       if (!baseline && !semanticSame) {
+        // Version 3 briefly ingested the moved RSS without its structured CVE
+        // fields. Keep its rows for audit and label this repair accurately.
+        const metadataRecovery = latest?.normalizer_version === "3" &&
+          previous?.id !== previous?.canonical_url && previous?.status === null;
         const fields = previousSemantic ? Object.keys(semantic).filter(key => JSON.stringify(previousSemantic[key]) !== JSON.stringify(semantic[key])).sort() : [];
         const sets: Record<string,{added:string[];removed:string[]}> = {};
         if (previous) for (const key of ["cves", "tags", "evidence_urls"] as const) {
@@ -63,7 +71,7 @@ export async function handleScheduledIngestion(env: { INGESTION_ENABLED: string;
           current: newGuidance?.slice(0,1500).join("") ?? null,
           truncated: (oldGuidance?.length ?? 0)>1500 || (newGuidance?.length ?? 0)>1500,
         } : null;
-        statements.push(db.prepare("INSERT INTO change_events(event_id,briefing_id,from_revision,to_revision,event_kind,observed_at,diff_json) VALUES(?,?,?,?,?,?,?)").bind(`${item.id}#${rev}`,item.id,latest?.revision ?? null,rev,latest ? "changed" : "first_observed",now,JSON.stringify({ changed_fields: fields, set_changes: sets, guidance, classifications: previousSemantic ? changeClasses(previousSemantic, semantic, fields) : ["briefing.first_observed"] })));
+        statements.push(db.prepare("INSERT INTO change_events(event_id,briefing_id,from_revision,to_revision,event_kind,observed_at,diff_json) VALUES(?,?,?,?,?,?,?)").bind(`${item.id}#${rev}`,item.id,latest?.revision ?? null,rev,latest ? "changed" : "first_observed",now,JSON.stringify({ changed_fields: fields, set_changes: sets, guidance, classifications: metadataRecovery ? ["briefing.source_metadata_recovered"] : previousSemantic ? changeClasses(previousSemantic, semantic, fields) : ["briefing.first_observed"] })));
       }
     }
     statements.push(db.prepare("INSERT INTO source_state(source_id,source_url,last_attempt_at,last_success_at,baseline_at,last_error_code) VALUES('zero_wire',?,?,?,?,NULL) ON CONFLICT(source_id) DO UPDATE SET source_url=excluded.source_url,last_attempt_at=excluded.last_attempt_at,last_success_at=excluded.last_success_at,baseline_at=COALESCE(source_state.baseline_at,excluded.baseline_at),last_error_code=NULL").bind(FEED_URL,now,now,now));

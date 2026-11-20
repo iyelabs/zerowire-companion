@@ -22,12 +22,19 @@ Repeated runs may reach the rate limit. This is not a load test or a source sync
 Keep TLS verification enabled. An organization CA may require
 `NODE_USE_SYSTEM_CA=1`; never disable certificate validation.
 
-The scheduled job polls the Zero Wire briefing RSS and the Radar CVE JSON feed.
+The scheduled job polls the Zero Wire briefing RSS and its structured briefing
+JSON for CVE associations, publisher action and review date. It reads the
+separate Radar CVE catalogue feed independently.
 The briefings retain their existing identifiers even if their published URLs
 change. The CVE cache holds up to 100 entries from the last successful feed
 response and reports its own freshness. Older CVEs may be outside this window.
 Radar reports its CVE data sources and licensing policy on its
 [About page](https://radar.cloudflare.com/about).
+
+On November 20, 2026 at 21:00 UTC, the RSS route recovery briefly recorded
+publisher CVE metadata as empty. CVE removals in that run reflect a parser
+transition. The next corrected observation records `briefing.source_metadata_recovered`
+for affected rows and uses the publisher's structured associations.
 
 ## Deployment configuration
 

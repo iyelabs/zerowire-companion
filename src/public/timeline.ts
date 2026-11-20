@@ -49,7 +49,8 @@ export async function timeline(q:ReadQueries,identifier:string,since:string,unti
  if(first && first>=start && first<=end && afterCursor(baseline,current))events.push(baseline);
  events.sort(order);
  const page=events.slice(0,limit);const last=page.at(-1);const next=events.length>limit && last ? {observed_at:last.observed_at,kind:last.kind,sequence:last.sequence} : null;
- const chronology=semanticSections(typeof data.content_html==="string"?data.content_html:null)?.["update chronology"];
+ const sections=semanticSections(typeof data.content_html==="string"?data.content_html:null);
+ const chronology=sections?.["update chronology"] ?? sections?.updates;
  const text=chronology?.text ?? null;const bytes=text?new TextEncoder().encode(text):null;
  return {status:"ok",identifier:row.id,requested_cve:requestedCve,events:page,next_cursor:next,
   source_chronology:{kind:"source_narrative",text:bytes && bytes.length>1200?new TextDecoder().decode(bytes.subarray(0,1200),{stream:true}):text,truncated:!!bytes && bytes.length>1200,source_url:source,source_date:null,date_availability:"not parsed",note:"Publisher narrative, not locally observed events."},

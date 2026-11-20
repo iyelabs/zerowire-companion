@@ -218,19 +218,25 @@ test('empty or partially malformed KEV catalog never produces false negative mem
 test("Radar path move keeps briefing IDs, first observations and change history", async t => {
  const {sql,adapter}=database();
  t.after(()=>sql.close());
- const old=feed(item("one","Before"),item("two","Stable","CVE-2099-10001"));
+ const old=feed(item("one","Before").replace("</item>","<category>patch</category></item>"),item("two","Stable","CVE-2099-10001").replace("</item>","<category>patch</category></item>"));
  let body=old;
- t.mock.method(globalThis,"fetch",async()=>new Response(body));
+ t.mock.method(globalThis,"fetch",async url=>String(url).includes("/zero-wire/feed?")?Response.json({
+  version:"https://jsonfeed.org/version/1.1",
+  items:["one","two"].map(slug=>{const url="https://radar.cloudflare.com/zero-wire/"+slug;return {
+   id:url,url,_zero_wire:{slug,main_action:"patch",last_reviewed:"2026-11-20",cves:slug==="two"?["CVE-2099-10001"]:[]}
+  };}),
+ }):new Response(body));
  const run=()=>handleScheduledIngestion({INGESTION_ENABLED:"true",DB:adapter});
  await run();
  body=old.replace("Before","After");
  await run();
  const oldRows=sql.prepare("SELECT id,first_observed_at FROM briefings ORDER BY id").all();
  const oldHistory=sql.prepare("SELECT * FROM change_events ORDER BY sequence").all();
- body=body.replaceAll("/security/zero-wire/","/zero-wire/");
+ body=body.replaceAll("/security/zero-wire/","/zero-wire/").replace(/<category>[^<]+<\/category>/g,"");
  await run();
  assert.deepEqual(sql.prepare("SELECT id,first_observed_at FROM briefings ORDER BY id").all(),oldRows);
  assert.deepEqual(sql.prepare("SELECT * FROM change_events ORDER BY sequence").all(),oldHistory);
+ assert.equal(sql.prepare("SELECT cve_id FROM briefing_cves").get().cve_id,"CVE-2099-10001");
  assert.equal(sql.prepare("SELECT canonical_url FROM briefings WHERE id LIKE '%/two'").get().canonical_url,"https://radar.cloudflare.com/zero-wire/two");
  const {createQueries}=await import("../src/public/queries.ts");
  const queries=createQueries(adapter);
