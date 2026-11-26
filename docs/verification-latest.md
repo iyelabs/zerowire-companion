@@ -38,7 +38,7 @@ coverage describe each recorded session, not permanent source state.
 node scripts/verify-hosted.mjs https://zerowire-companion.iyelabs.com/mcp
 ```
 
-This opt-in check calls all nine MCP tools and both feeds. It does not synchronize
+This opt-in check calls all 10 MCP tools and both feeds. It does not synchronize
 sources, modify intelligence or perform a load test. Repeated checks may hit the
 public rate limiter. Check returned per-source and per-CVE dates before acting.
 
